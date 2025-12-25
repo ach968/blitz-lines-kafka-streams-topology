@@ -15,14 +15,14 @@ COPY src ./src
 # Build the fat JAR
 RUN mvn clean package -DskipTests -B
 
-# Runtime stage
-FROM eclipse-temurin:17-jre-alpine
+# Runtime stage - using slim instead of alpine for RocksDB glibc compatibility
+FROM eclipse-temurin:17-jre-jammy
 
 WORKDIR /app
 
 # Create non-root user for security
-RUN addgroup -g 1000 streams && \
-    adduser -u 1000 -G streams -s /bin/sh -D streams
+RUN groupadd -g 1000 streams && \
+    useradd -u 1000 -g streams -s /bin/bash streams
 
 # Create state directory for RocksDB
 RUN mkdir -p /var/kafka-streams && \

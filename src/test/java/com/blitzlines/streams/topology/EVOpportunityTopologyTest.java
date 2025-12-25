@@ -237,14 +237,20 @@ class EVOpportunityTopologyTest {
         double fairProb = 1.0 / fairOdds;
         String devigMethod = sportsbook.equals("pinnacle") ? "power" : "mult";
         
+        // Use a fixed eventTime for tests (game start time)
+        long eventTime = 1735084800000L; // 2024-12-25 00:00:00 UTC
+        long scrapedAt = System.currentTimeMillis();
+        
         return new TransformedLine(
-            System.currentTimeMillis(),
+            scrapedAt,        // scraped_at
             sportsbook,
             gameId,
-            "football",
+            eventTime,        // event_time (game start)
+            "football",       // sport
+            "NFL",            // league
             marketType,
-            "TeamA",
-            "TeamB",
+            "TeamA",          // homeTeam
+            "TeamB",          // awayTeam
             selection,
             lineValue,
             odds,

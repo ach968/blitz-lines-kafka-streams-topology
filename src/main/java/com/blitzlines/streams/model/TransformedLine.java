@@ -14,63 +14,71 @@ import java.util.Objects;
 @JsonIgnoreProperties(ignoreUnknown = true)
 public class TransformedLine {
     
-    @JsonProperty("timestamp")
-    private long timestamp;           // Unix timestamp in milliseconds
+    @JsonProperty("scraped_at")
+    private long scrapedAt;           // When captured (epoch ms) - for staleness checks
     
     @JsonProperty("sportsbook")
     private String sportsbook;        // "pinnacle", "kalshi", "bovada"
     
-    @JsonProperty("gameId")
+    @JsonProperty("game_id")
     private String gameId;            // Canonical event ID: {sport}-{league}-{date}-{away}-{home}
+    
+    @JsonProperty("event_time")
+    private long eventTime;           // Game start time (epoch ms) - CRITICAL for join key uniqueness
     
     @JsonProperty("sport")
     private String sport;             // "football", "basketball", etc.
     
-    @JsonProperty("marketType")
+    @JsonProperty("market_type")
     private String marketType;        // "moneyline", "spread", "total"
     
-    @JsonProperty("teamA")
-    private String teamA;             // Home team name
+    @JsonProperty("home_team")
+    private String homeTeam;          // Home team name
     
-    @JsonProperty("teamB")
-    private String teamB;             // Away team name
+    @JsonProperty("away_team")
+    private String awayTeam;          // Away team name
     
     @JsonProperty("selection")
     private String selection;         // e.g., "Eagles -3.5", "Over 45.5"
     
-    @JsonProperty("lineValue")
+    @JsonProperty("line_value")
     private double lineValue;         // Line value (-3.5, 45.5, 0 for ML)
     
     @JsonProperty("odds")
     private double odds;              // Raw decimal odds from sportsbook
     
-    @JsonProperty("fairOdds")
+    @JsonProperty("fair_odds")
     private double fairOdds;          // SIMD-devigged fair odds (no vig)
     
-    @JsonProperty("fairProb")
+    @JsonProperty("fair_prob")
     private double fairProb;          // Fair implied probability (1/fairOdds)
     
-    @JsonProperty("devigMethod")
+    @JsonProperty("devig_method")
     private String devigMethod;       // Devig method: "power", "mult", "additive", "shin"
     
-    @JsonProperty("dataSource")
+    @JsonProperty("data_source")
     private String dataSource;        // API endpoint or scraper identifier
+    
+    @JsonProperty("league")
+    private String league;            // "NFL", "NBA", "MLB" - useful for filtering
 
     // Default constructor for Jackson
     public TransformedLine() {}
 
-    // Full constructor
-    public TransformedLine(long timestamp, String sportsbook, String gameId, String sport,
-                          String marketType, String teamA, String teamB, String selection,
-                          double lineValue, double odds, double fairOdds, double fairProb,
-                          String devigMethod, String dataSource) {
-        this.timestamp = timestamp;
+    // Full constructor matching C++ CanonicalLine
+    public TransformedLine(long scrapedAt, String sportsbook, String gameId, long eventTime,
+                          String sport, String league, String marketType, String homeTeam,
+                          String awayTeam, String selection, double lineValue, double odds,
+                          double fairOdds, double fairProb, String devigMethod, String dataSource) {
+        this.scrapedAt = scrapedAt;
         this.sportsbook = sportsbook;
         this.gameId = gameId;
+        this.eventTime = eventTime;
         this.sport = sport;
+        this.league = league;
         this.marketType = marketType;
-        this.teamA = teamA;
-        this.teamB = teamB;
+        this.homeTeam = homeTeam;
+        this.awayTeam = awayTeam;
         this.selection = selection;
         this.lineValue = lineValue;
         this.odds = odds;
@@ -82,17 +90,18 @@ public class TransformedLine {
 
     /**
      * Generate the join key for KTable joins.
-     * Format: {gameId}|{marketType}|{selection}|{lineValue}
+     * Format: {eventTime}|{gameId}|{marketType}|{selection}|{lineValue}
      * 
+     * eventTime is CRITICAL for uniqueness - same teams can play multiple times.
      * This ensures we only join lines for the exact same bet across sportsbooks.
      */
     public String getJoinKey() {
-        return String.format("%s|%s|%s|%.2f", gameId, marketType, selection, lineValue);
+        return String.format("%d|%s|%s|%s|%.2f", eventTime, gameId, marketType, selection, lineValue);
     }
 
     // Getters and Setters
-    public long getTimestamp() { return timestamp; }
-    public void setTimestamp(long timestamp) { this.timestamp = timestamp; }
+    public long getScrapedAt() { return scrapedAt; }
+    public void setScrapedAt(long scrapedAt) { this.scrapedAt = scrapedAt; }
 
     public String getSportsbook() { return sportsbook; }
     public void setSportsbook(String sportsbook) { this.sportsbook = sportsbook; }
@@ -100,17 +109,23 @@ public class TransformedLine {
     public String getGameId() { return gameId; }
     public void setGameId(String gameId) { this.gameId = gameId; }
 
+    public long getEventTime() { return eventTime; }
+    public void setEventTime(long eventTime) { this.eventTime = eventTime; }
+
     public String getSport() { return sport; }
     public void setSport(String sport) { this.sport = sport; }
+
+    public String getLeague() { return league; }
+    public void setLeague(String league) { this.league = league; }
 
     public String getMarketType() { return marketType; }
     public void setMarketType(String marketType) { this.marketType = marketType; }
 
-    public String getTeamA() { return teamA; }
-    public void setTeamA(String teamA) { this.teamA = teamA; }
+    public String getHomeTeam() { return homeTeam; }
+    public void setHomeTeam(String homeTeam) { this.homeTeam = homeTeam; }
 
-    public String getTeamB() { return teamB; }
-    public void setTeamB(String teamB) { this.teamB = teamB; }
+    public String getAwayTeam() { return awayTeam; }
+    public void setAwayTeam(String awayTeam) { this.awayTeam = awayTeam; }
 
     public String getSelection() { return selection; }
     public void setSelection(String selection) { this.selection = selection; }
@@ -138,7 +153,8 @@ public class TransformedLine {
         if (this == o) return true;
         if (o == null || getClass() != o.getClass()) return false;
         TransformedLine that = (TransformedLine) o;
-        return timestamp == that.timestamp &&
+        return scrapedAt == that.scrapedAt &&
+               eventTime == that.eventTime &&
                Double.compare(that.lineValue, lineValue) == 0 &&
                Double.compare(that.odds, odds) == 0 &&
                Double.compare(that.fairOdds, fairOdds) == 0 &&
@@ -146,9 +162,10 @@ public class TransformedLine {
                Objects.equals(sportsbook, that.sportsbook) &&
                Objects.equals(gameId, that.gameId) &&
                Objects.equals(sport, that.sport) &&
+               Objects.equals(league, that.league) &&
                Objects.equals(marketType, that.marketType) &&
-               Objects.equals(teamA, that.teamA) &&
-               Objects.equals(teamB, that.teamB) &&
+               Objects.equals(homeTeam, that.homeTeam) &&
+               Objects.equals(awayTeam, that.awayTeam) &&
                Objects.equals(selection, that.selection) &&
                Objects.equals(devigMethod, that.devigMethod) &&
                Objects.equals(dataSource, that.dataSource);
@@ -156,20 +173,23 @@ public class TransformedLine {
 
     @Override
     public int hashCode() {
-        return Objects.hash(timestamp, sportsbook, gameId, sport, marketType, teamA, teamB,
-                           selection, lineValue, odds, fairOdds, fairProb, devigMethod, dataSource);
+        return Objects.hash(scrapedAt, eventTime, sportsbook, gameId, sport, league, marketType,
+                           homeTeam, awayTeam, selection, lineValue, odds, fairOdds, fairProb,
+                           devigMethod, dataSource);
     }
 
     @Override
     public String toString() {
         return "TransformedLine{" +
-               "timestamp=" + timestamp +
+               "scrapedAt=" + scrapedAt +
+               ", eventTime=" + eventTime +
                ", sportsbook='" + sportsbook + '\'' +
                ", gameId='" + gameId + '\'' +
                ", sport='" + sport + '\'' +
+               ", league='" + league + '\'' +
                ", marketType='" + marketType + '\'' +
-               ", teamA='" + teamA + '\'' +
-               ", teamB='" + teamB + '\'' +
+               ", homeTeam='" + homeTeam + '\'' +
+               ", awayTeam='" + awayTeam + '\'' +
                ", selection='" + selection + '\'' +
                ", lineValue=" + lineValue +
                ", odds=" + odds +

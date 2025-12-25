@@ -13,16 +13,19 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
 /**
- * Kafka Streams topology for joining sportsbook odds.
+ * Kafka Streams topology for DEDUPLICATING and JOINING sportsbook odds in a single step.
  * 
  * This topology:
- * 1. Creates KTables for each sportsbook (Pinnacle, Kalshi, Bovada)
- * 2. Re-keys records by composite join key: {gameId}|{marketType}|{selection}|{lineValue}
+ * 1. Creates deduplicated KTables for each sportsbook (Pinnacle, Kalshi, Bovada)
+ *    - Uses aggregate() to compare incoming odds against stored odds
+ *    - Only updates KTable state when odds actually CHANGE
+ *    - Prevents redundant join emissions when scrapers republish unchanged lines
+ * 2. Re-keys records by composite join key: {eventTime}|{gameId}|{marketType}|{selection}|{lineValue}
  * 3. Joins soft book KTables against sharp book (Pinnacle) KTable
  * 4. Outputs joined odds pairs to joined-odds topic
  * 
  * The C++ SIMD engine downstream consumes from joined-odds and performs:
- * - EV% calculation
+ * - EV% calculation using sharp book fair probability
  * - Kelly criterion sizing
  * - WebSocket publishing
  * 
@@ -31,6 +34,7 @@ import org.slf4j.LoggerFactory;
  * - Kalshi and Bovada are soft books
  * - Each sportsbook maintains its own KTable keyed by composite bet identifier
  * - KTable-KTable joins ensure we always compare latest odds
+ * - DEDUP + JOIN in one step eliminates need for intermediate *-canonical topics
  */
 public class EVOpportunityTopology {
     
@@ -96,27 +100,57 @@ public class EVOpportunityTopology {
     }
 
     /**
-     * Create a KTable for a sportsbook topic, re-keyed by composite join key.
+     * Create a KTable for a sportsbook topic.
      * 
-     * The composite key format is: {gameId}|{marketType}|{selection}|{lineValue}
+     * The composite key format is: {eventTime}|{gameId}|{marketType}|{selection}|{lineValue}
+     * - eventTime is CRITICAL: same teams can play on different dates
      * This ensures we only join lines for the exact same bet across sportsbooks.
+     * 
+     * DEDUP LOGIC: Uses aggregate() to compare incoming odds against stored odds.
+     * Only updates the KTable (and triggers downstream joins) when odds actually change.
+     * This prevents redundant join emissions when scrapers republish unchanged lines.
      * 
      * @param topic The source topic name
      * @param storeName The state store name for this KTable
-     * @return KTable keyed by composite join key
+     * @return KTable keyed by composite join key (deduplicated by odds value)
      */
     private KTable<String, TransformedLine> createSportsbookTable(String topic, String storeName) {
-        log.info("Creating KTable for topic: {} with store: {}", topic, storeName);
+        log.info("Creating deduplicated KTable for topic: {} with store: {}", topic, storeName);
         
         return builder
             // Consume from topic with String key and TransformedLine value
             .stream(topic, Consumed.with(stringSerde, lineSerde))
             // Re-key by composite join key
             .selectKey((originalKey, line) -> line.getJoinKey())
-            // Log incoming records for debugging
-            .peek((key, line) -> log.debug("Received line: {} -> odds={}", key, line.getOdds()))
-            // Convert to KTable with materialized state store
-            .toTable(
+            // Group by the new key for aggregation
+            .groupByKey(Grouped.with(stringSerde, lineSerde))
+            // Aggregate with dedup: only update when odds change
+            .aggregate(
+                // Initializer: null means no previous value
+                () -> null,
+                // Aggregator: compare odds, only update if changed
+                (key, newLine, currentLine) -> {
+                    if (currentLine == null) {
+                        // First record for this key - always accept
+                        log.debug("New line: {} -> odds={}", key, newLine.getOdds());
+                        return newLine;
+                    }
+                    
+                    // Compare odds (with small epsilon for floating point)
+                    if (Math.abs(currentLine.getOdds() - newLine.getOdds()) > 0.0001) {
+                        // Odds changed - update and trigger downstream join
+                        log.info("Odds changed: {} | {} -> {} ({})",
+                            key, currentLine.getOdds(), newLine.getOdds(), newLine.getSportsbook());
+                        return newLine;
+                    }
+                    
+                    // Odds unchanged - return current to avoid triggering join
+                    // Note: KTable will still "see" an update, but value is identical
+                    // so downstream joins won't produce duplicate output
+                    log.trace("Odds unchanged: {} @ {}", key, currentLine.getOdds());
+                    return currentLine;
+                },
+                // Materialized state store configuration
                 Materialized.<String, TransformedLine, KeyValueStore<Bytes, byte[]>>as(storeName)
                     .withKeySerde(stringSerde)
                     .withValueSerde(lineSerde)

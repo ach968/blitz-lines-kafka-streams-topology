@@ -22,17 +22,20 @@ public class JoinedOdds {
     @JsonProperty("game_id")
     private String gameId;            // Canonical event ID
     
+    @JsonProperty("event_time")
+    private long eventTime;           // Game start time (epoch ms) - for uniqueness
+    
     @JsonProperty("sport")
     private String sport;             // Sport identifier
     
     @JsonProperty("market_type")
     private String marketType;        // "moneyline", "spread", "total"
     
-    @JsonProperty("team_a")
-    private String teamA;             // Home team
+    @JsonProperty("home_team")
+    private String homeTeam;          // Home team
     
-    @JsonProperty("team_b")
-    private String teamB;             // Away team
+    @JsonProperty("away_team")
+    private String awayTeam;          // Away team
     
     @JsonProperty("selection")
     private String selection;         // The specific bet selection
@@ -65,10 +68,11 @@ public class JoinedOdds {
     public JoinedOdds(TransformedLine sharpLine, TransformedLine softLine) {
         this.timestamp = System.currentTimeMillis();
         this.gameId = sharpLine.getGameId();
+        this.eventTime = sharpLine.getEventTime();
         this.sport = sharpLine.getSport();
         this.marketType = sharpLine.getMarketType();
-        this.teamA = sharpLine.getTeamA();
-        this.teamB = sharpLine.getTeamB();
+        this.homeTeam = sharpLine.getHomeTeam();
+        this.awayTeam = sharpLine.getAwayTeam();
         this.selection = sharpLine.getSelection();
         this.lineValue = sharpLine.getLineValue();
         this.sharpBook = sharpLine.getSportsbook();
@@ -86,17 +90,20 @@ public class JoinedOdds {
     public String getGameId() { return gameId; }
     public void setGameId(String gameId) { this.gameId = gameId; }
 
+    public long getEventTime() { return eventTime; }
+    public void setEventTime(long eventTime) { this.eventTime = eventTime; }
+
     public String getSport() { return sport; }
     public void setSport(String sport) { this.sport = sport; }
 
     public String getMarketType() { return marketType; }
     public void setMarketType(String marketType) { this.marketType = marketType; }
 
-    public String getTeamA() { return teamA; }
-    public void setTeamA(String teamA) { this.teamA = teamA; }
+    public String getHomeTeam() { return homeTeam; }
+    public void setHomeTeam(String homeTeam) { this.homeTeam = homeTeam; }
 
-    public String getTeamB() { return teamB; }
-    public void setTeamB(String teamB) { this.teamB = teamB; }
+    public String getAwayTeam() { return awayTeam; }
+    public void setAwayTeam(String awayTeam) { this.awayTeam = awayTeam; }
 
     public String getSelection() { return selection; }
     public void setSelection(String selection) { this.selection = selection; }
@@ -128,6 +135,7 @@ public class JoinedOdds {
         if (o == null || getClass() != o.getClass()) return false;
         JoinedOdds that = (JoinedOdds) o;
         return timestamp == that.timestamp &&
+               eventTime == that.eventTime &&
                Double.compare(that.lineValue, lineValue) == 0 &&
                Double.compare(that.sharpOdds, sharpOdds) == 0 &&
                Double.compare(that.sharpFairOdds, sharpFairOdds) == 0 &&
@@ -136,8 +144,8 @@ public class JoinedOdds {
                Objects.equals(gameId, that.gameId) &&
                Objects.equals(sport, that.sport) &&
                Objects.equals(marketType, that.marketType) &&
-               Objects.equals(teamA, that.teamA) &&
-               Objects.equals(teamB, that.teamB) &&
+               Objects.equals(homeTeam, that.homeTeam) &&
+               Objects.equals(awayTeam, that.awayTeam) &&
                Objects.equals(selection, that.selection) &&
                Objects.equals(sharpBook, that.sharpBook) &&
                Objects.equals(softBook, that.softBook);
@@ -145,17 +153,21 @@ public class JoinedOdds {
 
     @Override
     public int hashCode() {
-        return Objects.hash(timestamp, gameId, sport, marketType, teamA, teamB, selection, lineValue,
-                           sharpBook, softBook, sharpOdds, sharpFairOdds, sharpFairProb, softOdds);
+        return Objects.hash(timestamp, eventTime, gameId, sport, marketType, homeTeam, awayTeam,
+                           selection, lineValue, sharpBook, softBook, sharpOdds, sharpFairOdds,
+                           sharpFairProb, softOdds);
     }
 
     @Override
     public String toString() {
         return "JoinedOdds{" +
                "timestamp=" + timestamp +
+               ", eventTime=" + eventTime +
                ", gameId='" + gameId + '\'' +
                ", sport='" + sport + '\'' +
                ", marketType='" + marketType + '\'' +
+               ", homeTeam='" + homeTeam + '\'' +
+               ", awayTeam='" + awayTeam + '\'' +
                ", selection='" + selection + '\'' +
                ", lineValue=" + lineValue +
                ", sharpBook='" + sharpBook + '\'' +
