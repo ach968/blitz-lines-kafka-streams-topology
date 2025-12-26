@@ -62,6 +62,9 @@ public class TransformedLine {
     @JsonProperty("league")
     private String league;            // "NFL", "NBA", "MLB" - useful for filtering
 
+    @JsonProperty("period")
+    private int period;               // 0 = full game, 1 = 1st half, 3 = 2nd half
+
     // Default constructor for Jackson
     public TransformedLine() {}
 
@@ -69,7 +72,8 @@ public class TransformedLine {
     public TransformedLine(long scrapedAt, String sportsbook, String gameId, long eventTime,
                           String sport, String league, String marketType, String homeTeam,
                           String awayTeam, String selection, double lineValue, double odds,
-                          double fairOdds, double fairProb, String devigMethod, String dataSource) {
+                          double fairOdds, double fairProb, String devigMethod, String dataSource,
+                          int period) {
         this.scrapedAt = scrapedAt;
         this.sportsbook = sportsbook;
         this.gameId = gameId;
@@ -86,17 +90,19 @@ public class TransformedLine {
         this.fairProb = fairProb;
         this.devigMethod = devigMethod;
         this.dataSource = dataSource;
+        this.period = period;
     }
 
     /**
      * Generate the join key for KTable joins.
-     * Format: {eventTime}|{gameId}|{marketType}|{selection}|{lineValue}
+     * Format: {eventTime}|{gameId}|{marketType}|{selection}|{lineValue}|{period}
      * 
      * eventTime is CRITICAL for uniqueness - same teams can play multiple times.
+     * period distinguishes full game from half lines.
      * This ensures we only join lines for the exact same bet across sportsbooks.
      */
     public String getJoinKey() {
-        return String.format("%d|%s|%s|%s|%.2f", eventTime, gameId, marketType, selection, lineValue);
+        return String.format("%d|%s|%s|%s|%.2f|%d", eventTime, gameId, marketType, selection, lineValue, period);
     }
 
     // Getters and Setters
@@ -148,6 +154,9 @@ public class TransformedLine {
     public String getDataSource() { return dataSource; }
     public void setDataSource(String dataSource) { this.dataSource = dataSource; }
 
+    public int getPeriod() { return period; }
+    public void setPeriod(int period) { this.period = period; }
+
     @Override
     public boolean equals(Object o) {
         if (this == o) return true;
@@ -159,6 +168,7 @@ public class TransformedLine {
                Double.compare(that.odds, odds) == 0 &&
                Double.compare(that.fairOdds, fairOdds) == 0 &&
                Double.compare(that.fairProb, fairProb) == 0 &&
+               period == that.period &&
                Objects.equals(sportsbook, that.sportsbook) &&
                Objects.equals(gameId, that.gameId) &&
                Objects.equals(sport, that.sport) &&
@@ -175,7 +185,7 @@ public class TransformedLine {
     public int hashCode() {
         return Objects.hash(scrapedAt, eventTime, sportsbook, gameId, sport, league, marketType,
                            homeTeam, awayTeam, selection, lineValue, odds, fairOdds, fairProb,
-                           devigMethod, dataSource);
+                           devigMethod, dataSource, period);
     }
 
     @Override
@@ -197,6 +207,7 @@ public class TransformedLine {
                ", fairProb=" + fairProb +
                ", devigMethod='" + devigMethod + '\'' +
                ", dataSource='" + dataSource + '\'' +
+               ", period=" + period +
                '}';
     }
 }

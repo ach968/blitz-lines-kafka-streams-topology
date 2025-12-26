@@ -1,5 +1,6 @@
 package com.blitzlines.streams.serde;
 
+import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import org.apache.kafka.common.serialization.Deserializer;
 import org.apache.kafka.common.serialization.Serde;
@@ -13,6 +14,8 @@ import java.util.Map;
 /**
  * Generic JSON Serde for Kafka Streams using Jackson.
  * Handles serialization/deserialization of POJOs to/from JSON bytes.
+ * 
+ * Supports Kafka Connect envelope format: automatically unwraps {"schema": ..., "payload": ...}
  * 
  * @param <T> The type to serialize/deserialize
  */
@@ -84,6 +87,7 @@ public class JsonSerde<T> implements Serde<T> {
 
     /**
      * JSON Deserializer implementation.
+     * Automatically unwraps Kafka Connect envelope format: {"schema": ..., "payload": ...}
      */
     public static class JsonDeserializer<T> implements Deserializer<T> {
         
@@ -104,7 +108,19 @@ public class JsonSerde<T> implements Serde<T> {
                 return null;
             }
             try {
-                return mapper.readValue(data, targetType);
+                // First, parse as generic JSON to check for Kafka Connect envelope
+                JsonNode root = mapper.readTree(data);
+                
+                // Check if this is a Kafka Connect envelope with schema + payload
+                if (root.has("schema") && root.has("payload")) {
+                    // Unwrap the payload from the envelope
+                    JsonNode payload = root.get("payload");
+                    log.trace("Unwrapping Kafka Connect envelope for topic {}", topic);
+                    return mapper.treeToValue(payload, targetType);
+                }
+                
+                // Not an envelope, deserialize directly
+                return mapper.treeToValue(root, targetType);
             } catch (IOException e) {
                 log.error("Error deserializing JSON from topic {}: {}", topic, e.getMessage());
                 log.debug("Raw data: {}", new String(data));

@@ -257,7 +257,8 @@ class EVOpportunityTopologyTest {
             fairOdds,
             fairProb,
             devigMethod,
-            "test"
+            "test",
+            0                 // period (0 = full game)
         );
     }
 }
